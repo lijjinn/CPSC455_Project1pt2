@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, session, redirect, url_for
+from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory
 from flask_socketio import join_room, leave_room, send, SocketIO
 import random
 import time
@@ -10,6 +10,7 @@ from string import ascii_uppercase
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "hjhjsdahhds"
+app.config["UPLOAD_FOLDER"] = "uploads"  # Folder where uploaded files will be saved
 socketio = SocketIO(app)
 
 rooms = {}
@@ -21,6 +22,7 @@ TIME_WINDOW = 10
 # Chat log setup
 LOGS_DIR = "chat_logs"
 os.makedirs(LOGS_DIR, exist_ok=True)
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)  # Create the upload folder if it doesn't exist
 
 def generate_unique_code(length):
     while True:
@@ -79,13 +81,28 @@ def home():
 
     return render_template("home.html")
 
-@app.route("/room")
+@app.route("/room", methods=["GET", "POST"])
 def room():
     room = session.get("room")
-    if not room or not session.get("name") or room not in rooms:
+    if not room or not session.get("name"):
         return redirect(url_for("home"))
 
-    return render_template("room.html", code=room, messages=rooms[room]["messages"])
+    if request.method == "POST":
+        # Handle file upload
+        file = request.files.get("file")
+        if file:
+            # Save the file to the server
+            filename = file.filename
+            file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+
+    # Get the list of files in the upload folder
+    uploaded_files = os.listdir(app.config["UPLOAD_FOLDER"])
+    return render_template("room.html", code=room, uploaded_files=uploaded_files)
+
+@app.route("/uploads/<filename>")
+def download_file(filename):
+    # Serve the file for download
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
 @socketio.on("message")
 def message(data):
@@ -142,3 +159,4 @@ def disconnect():
 
 if __name__ == "__main__":
     socketio.run(app, debug=True)
+

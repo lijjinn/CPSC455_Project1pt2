@@ -1,4 +1,5 @@
-{% extends 'base.html' %} {% block content %}
+{% extends 'base.html' %} 
+{% block content %}
 <div class="message-box">
   <h2>Chat Room: {{code}}</h2>
   <div class="messages" id="messages"></div>
@@ -16,6 +17,18 @@
     </button>
   </div>
 </div>
+
+<h3>Uploaded Files:</h3>
+<ul>
+  {% for filename in uploaded_files %}
+    <li><a href="{{ url_for('download_file', filename=filename) }}">{{ filename }}</a></li>
+  {% endfor %}
+</ul>
+
+<form id="file-upload-form" action="{{ url_for('room') }}" method="POST" enctype="multipart/form-data">
+  <input type="file" name="file" id="file">
+  <button type="submit">Upload</button>
+</form>
 
 <!-- Emoji Picker Library -->
 <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.0.0/dist/emoji-picker.min.js"></script>
@@ -62,4 +75,8 @@
 <script type="text/javascript">
   createMessage("{{msg.name}}", "{{msg.message}}");
 </script>
-{% endfor %} {% endblock %}
+{% endfor %}
+{% endblock %}
+
+
+

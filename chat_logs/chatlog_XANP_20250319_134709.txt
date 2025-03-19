@@ -1,0 +1,1 @@
+[2025-03-19 13:47:09] user B: <a href="https://google.com" target="_blank">Example Link</a>
