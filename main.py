@@ -2,7 +2,9 @@ from flask import Flask, render_template, request, session, redirect, url_for
 from flask_socketio import join_room, leave_room, send, SocketIO
 import random
 import time
-import re  # Add this import for text formatting
+import re
+import os
+import datetime
 from collections import defaultdict
 from string import ascii_uppercase
 
@@ -11,10 +13,14 @@ app.config["SECRET_KEY"] = "hjhjsdahhds"
 socketio = SocketIO(app)
 
 rooms = {}
-user_message_times = defaultdict(list)  # Store message timestamps per user
+user_message_times = defaultdict(list)
 
-MESSAGE_LIMIT = 5  # Max messages per time window
-TIME_WINDOW = 10  # Time window in seconds
+MESSAGE_LIMIT = 5
+TIME_WINDOW = 10
+
+# Chat log setup
+LOGS_DIR = "chat_logs"
+os.makedirs(LOGS_DIR, exist_ok=True)
 
 def generate_unique_code(length):
     while True:
@@ -23,13 +29,24 @@ def generate_unique_code(length):
             return code
 
 def format_text(text):
-    # Bold (**text**)
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
-    # Italics (*text*)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
-    # Links [Link Text](URL)
     text = re.sub(r'\[([^\]]+)\]\((https?:\/\/[^\s]+)\)', r'<a href="\2" target="_blank">\1</a>', text)
     return text
+
+def get_log_filename(room):
+    date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"chatlog_{room}_{date_str}.txt"
+
+def log_message(room, name, message):
+    log_file = get_log_filename(room)
+    log_path = os.path.join(LOGS_DIR, log_file)
+
+    timestamp = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+    log_entry = f"{timestamp} {name}: {message}\n"
+
+    with open(log_path, "a") as file:
+        file.write(log_entry)
 
 @app.route("/", methods=["POST", "GET"])
 def home():
@@ -88,8 +105,10 @@ def message(data):
         return
 
     user_message_times[name].append(now)
-    formatted_message = format_text(data["data"])  # Format the message here
+    formatted_message = format_text(data["data"])
     content = {"name": name, "message": formatted_message}
+
+    log_message(room, name, formatted_message)
 
     send(content, to=room)
     rooms[room]["messages"].append(content)
