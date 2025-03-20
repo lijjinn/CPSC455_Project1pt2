@@ -10,6 +10,13 @@ import json
 import base64
 from collections import defaultdict
 from string import ascii_uppercase
+from datetime import datetime, timedelta  # Add this import
+
+# Brute-force protection variables
+failed_attempts = {}  
+LOCKOUT_DURATION = timedelta(minutes=1)  
+ATTEMPT_LIMIT = 5  
+
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "hjhjsdahhds"
@@ -130,21 +137,47 @@ def register():
 
 @app.route("/login", methods=["POST", "GET"])
 def login():
+    ip_address = request.remote_addr
+    now = datetime.now()
+
+    # Clear expired lockouts (only if lockout_until exists)
+    if ip_address in failed_attempts:
+        lockout_until = failed_attempts[ip_address].get('lockout_until')
+        if lockout_until and lockout_until < now:
+            del failed_attempts[ip_address]
+
+    # Block login if the IP is temporarily locked
+    if ip_address in failed_attempts and 'lockout_until' in failed_attempts[ip_address]:
+        return render_template("login.html", error="Too many failed attempts. Try again later.")
+
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
         users = load_users()
 
-        # Check if user exists and verify password
+        # Verify credentials
         if username not in users or not verify_password(password, users[username]):
+            # Track failed attempts
+            if ip_address not in failed_attempts:
+                failed_attempts[ip_address] = {"count": 1, "first_attempt": now}
+            else:
+                failed_attempts[ip_address]["count"] += 1
+
+            # Lockout if limit is reached
+            if failed_attempts[ip_address]["count"] >= ATTEMPT_LIMIT:
+                failed_attempts[ip_address]["lockout_until"] = now + LOCKOUT_DURATION
+                return render_template("login.html", error="Too many failed attempts. Try again later.")
+
             return render_template("login.html", error="Invalid credentials.")
 
-        # Store user session
+        # Successful login — clear failed attempts
+        if ip_address in failed_attempts:
+            del failed_attempts[ip_address]
+
         session["username"] = username
         return redirect(url_for("home"))
 
     return render_template("login.html")
-
 
 
 @app.route("/logout")
