@@ -4,13 +4,12 @@ import random
 import time
 import re
 import os
-import datetime
+import base64  # For file handling
 from collections import defaultdict
 from string import ascii_uppercase
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "hjhjsdahhds"
-app.config["UPLOAD_FOLDER"] = "uploads"  # Folder where uploaded files will be saved
 socketio = SocketIO(app)
 
 rooms = {}
@@ -19,10 +18,14 @@ user_message_times = defaultdict(list)
 MESSAGE_LIMIT = 5
 TIME_WINDOW = 10
 
-# Chat log setup
 LOGS_DIR = "chat_logs"
-os.makedirs(LOGS_DIR, exist_ok=True)
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)  # Create the upload folder if it doesn't exist
+UPLOADS_DIR = "uploads"
+
+# Ensure log and upload directories exist
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
+if not os.path.exists(UPLOADS_DIR):
+    os.makedirs(UPLOADS_DIR)
 
 def generate_unique_code(length):
     while True:
@@ -36,19 +39,12 @@ def format_text(text):
     text = re.sub(r'\[([^\]]+)\]\((https?:\/\/[^\s]+)\)', r'<a href="\2" target="_blank">\1</a>', text)
     return text
 
-def get_log_filename(room):
-    date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"chatlog_{room}_{date_str}.txt"
-
 def log_message(room, name, message):
-    log_file = get_log_filename(room)
-    log_path = os.path.join(LOGS_DIR, log_file)
-
-    timestamp = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-    log_entry = f"{timestamp} {name}: {message}\n"
-
-    with open(log_path, "a") as file:
-        file.write(log_entry)
+    log_file = os.path.join(LOGS_DIR, f"{room}.txt")
+    with open(log_file, "a") as file:
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        file.write(f"[{timestamp}] {name}: {message}\n")
+    print(f"Logging message: {room} - {name}: {message}")
 
 @app.route("/", methods=["POST", "GET"])
 def home():
@@ -81,28 +77,40 @@ def home():
 
     return render_template("home.html")
 
-@app.route("/room", methods=["GET", "POST"])
+@app.route("/room")
 def room():
     room = session.get("room")
-    if not room or not session.get("name"):
+    if not room or not session.get("name") or room not in rooms:
         return redirect(url_for("home"))
 
-    if request.method == "POST":
-        # Handle file upload
-        file = request.files.get("file")
-        if file:
-            # Save the file to the server
-            filename = file.filename
-            file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+    return render_template("room.html", code=room, messages=rooms[room]["messages"])
 
-    # Get the list of files in the upload folder
-    uploaded_files = os.listdir(app.config["UPLOAD_FOLDER"])
-    return render_template("room.html", code=room, uploaded_files=uploaded_files)
+@socketio.on("file_upload")
+def handle_file_upload(data):
+    room = session.get("room")
+    name = session.get("name")
+
+    if not room or room not in rooms:
+        return
+
+    file_name = data["file_name"]
+    file_data = data["file_data"]
+
+    file_path = os.path.join(UPLOADS_DIR, file_name)
+
+    # Decode and save the file
+    with open(file_path, "wb") as f:
+        f.write(base64.b64decode(file_data.split(",")[1]))
+
+    socketio.emit("file_received", {
+        "name": name,
+        "file_name": file_name,
+        "file_data": f"/uploads/{file_name}"
+    }, room=room)
 
 @app.route("/uploads/<filename>")
 def download_file(filename):
-    # Serve the file for download
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+    return send_from_directory(UPLOADS_DIR, filename)
 
 @socketio.on("message")
 def message(data):
@@ -159,4 +167,3 @@ def disconnect():
 
 if __name__ == "__main__":
     socketio.run(app, debug=True)
-

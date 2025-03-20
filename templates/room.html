@@ -1,5 +1,4 @@
-{% extends 'base.html' %} 
-{% block content %}
+{% extends 'base.html' %} {% block content %}
 <div class="message-box">
   <h2>Chat Room: {{code}}</h2>
   <div class="messages" id="messages"></div>
@@ -15,20 +14,12 @@
     <button type="button" name="send" id="send-btn" onClick="sendMessage()">
       Send
     </button>
+    <div class="file-transfer">
+      <input type="file" id="file-input" />
+      <button type="button" id="upload-btn" onclick="uploadFile()">Upload File</button>
+    </div>
   </div>
 </div>
-
-<h3>Uploaded Files:</h3>
-<ul>
-  {% for filename in uploaded_files %}
-    <li><a href="{{ url_for('download_file', filename=filename) }}">{{ filename }}</a></li>
-  {% endfor %}
-</ul>
-
-<form id="file-upload-form" action="{{ url_for('room') }}" method="POST" enctype="multipart/form-data">
-  <input type="file" name="file" id="file">
-  <button type="submit">Upload</button>
-</form>
 
 <!-- Emoji Picker Library -->
 <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.0.0/dist/emoji-picker.min.js"></script>
@@ -41,26 +32,47 @@
   const messageInput = document.querySelector('#message');
 
   emojiPicker.addEventListener('emoji-click', (event) => {
+      console.log("Emoji clicked:", event.detail.unicode); // Debugging step
       const emoji = event.detail.unicode;
       messageInput.value += emoji;
   });
 
   const createMessage = (name, msg) => {
-    const content = `
-    <div class="text">
+    const content = document.createElement("div");
+    content.classList.add("text");
+
+    // Use `.innerHTML` to ensure HTML tags (like links) render properly
+    content.innerHTML = `
         <span>
             <strong>${name}</strong>: ${msg}
         </span>
         <span class="muted">
             ${new Date().toLocaleString()}
         </span>
-    </div>
     `;
-    messages.innerHTML += content;
+    
+    messages.appendChild(content);
   };
 
-  socketio.on("message", (data) => {
+socketio.on("message", (data) => {
     createMessage(data.name, data.message);
+});
+
+socketio.on("file_received", (data) => {
+    const content = document.createElement("div");
+    content.classList.add("text");
+    content.innerHTML = `
+        <span>
+            <strong>${data.name}</strong> shared a file: 
+            <a href="${data.file_data}" download="${data.file_name}">
+                ${data.file_name}
+            </a>
+        </span>
+        <span class="muted">
+            ${new Date().toLocaleString()}
+        </span>
+    `;
+    messages.appendChild(content);
   });
 
   const sendMessage = () => {
@@ -69,14 +81,34 @@
     socketio.emit("message", { data: message.value });
     message.value = "";
   };
+
+  const uploadFile = () => {
+      const fileInput = document.getElementById("file-input");
+      const file = fileInput.files[0];
+
+      if (!file) {
+          alert("Please select a file before uploading.");
+          return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+          const fileData = event.target.result;
+          const fileName = file.name;
+
+          socketio.emit("file_upload", {
+              file_name: fileName,
+              file_data: fileData
+          });
+
+          alert(`File "${fileName}" uploaded successfully.`);
+      };
+      reader.readAsDataURL(file);
+  };
 </script>
 
 {% for msg in messages %}
 <script type="text/javascript">
   createMessage("{{msg.name}}", "{{msg.message}}");
 </script>
-{% endfor %}
-{% endblock %}
-
-
-
+{% endfor %} {% endblock %}
