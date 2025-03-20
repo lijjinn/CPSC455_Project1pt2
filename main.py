@@ -149,8 +149,9 @@ def login():
 
 @app.route("/logout")
 def logout():
-    session.clear()
-    return redirect(url_for("login"))
+    session.clear()  # Clears session data
+    return redirect(url_for("login"))  # Redirect back to the login page
+
 
 @app.route("/room")
 def room():
