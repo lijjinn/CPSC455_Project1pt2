@@ -1,0 +1,10 @@
+<form method="POST" action="/register">
+    <input type="text" name="username" placeholder="Create Username" required />
+    <input type="password" name="password" placeholder="Create Password" required />
+    <button type="submit">Register</button>
+</form>
+
+{% if error %}
+<p style="color: red;">{{ error }}</p>
+{% endif %}
+
