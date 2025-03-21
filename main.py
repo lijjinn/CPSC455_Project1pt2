@@ -10,7 +10,14 @@ import json
 import base64
 from collections import defaultdict
 from string import ascii_uppercase
-from datetime import datetime, timedelta  # Add this import
+from datetime import datetime, timedelta 
+from encryption_utils import load_rsa_keys, encrypt_aes_key, decrypt_aes_key
+from encryption_utils import aes_encrypt, aes_decrypt
+from cryptography.hazmat.primitives import serialization
+from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory, jsonify
+
+
+
 
 # Brute-force protection variables
 failed_attempts = {}  
@@ -179,6 +186,32 @@ def login():
 
     return render_template("login.html")
 
+@app.route('/get_public_key', methods=['GET'])
+def get_public_key():
+    private_key, public_key = load_rsa_keys()
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+
+@app.route('/exchange_key', methods=['POST'])
+def exchange_key():
+    data = request.json
+    encrypted_aes_key = data.get("key")
+
+    if not encrypted_aes_key:
+        return jsonify({"error": "No key provided"}), 400
+
+    private_key, _ = load_rsa_keys()
+
+    try:
+        decrypted_aes_key = decrypt_aes_key(encrypted_aes_key, private_key)
+        session['aes_key'] = decrypted_aes_key  # Store AES key in session securely
+        return jsonify({"message": "AES key securely exchanged"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Key decryption failed: {str(e)}"}), 500
+
+
 
 @app.route("/logout")
 def logout():
@@ -199,9 +232,18 @@ def room():
 def message(data):
     room = session.get("room")
     name = session.get("username")
+    
     if room not in rooms:
         return
 
+    # Check if AES key is available in session
+    if 'aes_key' not in session:
+        send({"name": "Server", "message": "Encryption key is missing. Reconnect to exchange keys."}, to=room)
+        return
+
+    aes_key = session['aes_key']  # Retrieve AES key from session
+
+    # Encrypt incoming message
     now = time.time()
     timestamps = user_message_times[name]
 
@@ -213,13 +255,17 @@ def message(data):
         return
 
     user_message_times[name].append(now)
-    formatted_message = format_text(data["data"])
-    content = {"name": name, "message": formatted_message}
 
-    log_message(room, name, formatted_message)
+    # Encrypt the message before broadcasting
+    encrypted_message = aes_encrypt(data["data"], aes_key)
 
-    send(content, to=room)
+    content = {"name": name, "message": base64.b64encode(encrypted_message).decode('utf-8')}
+
+    log_message(room, name, data["data"])  # Log plaintext message for storage
+
+    send(content, to=room)  # Send encrypted message to clients
     rooms[room]["messages"].append(content)
+
 
 @socketio.on("connect")
 def connect(auth):
